@@ -1,0 +1,90 @@
+#MIDTERM PROJECT - shwetha arumugam chitra devi
+
+library(data.table)
+library(caret)
+library(Metrics)
+library(dplyr)
+library(glmnet)
+library(plotmo)
+library(lubridate)
+library(Matrix)
+
+set.seed(7)
+
+#read in data
+omicron_train<-fread("~/Desktop/Stat_380_train.csv")
+omicron_test<- fread("~/Desktop/Stat_380_test.csv")
+omicron_submit <- fread("~/Desktop/Example_Sub.csv")
+covar_data <- fread("~/Desktop/covar_data.csv")
+
+fwrite(omicron_train,"./project/volume/data/raw/Stat_380_train.csv")
+fwrite(omicron_test,"./project/volume/data/raw/Stat_380_test.csv")
+fwrite(covar_data,"./project/volume/data/raw/covar_data.csv")
+fwrite(omicron_submit,'./project/volume/data/raw/Example_Sub.csv')
+
+#Prep Data for Modeling
+
+#subset out only the columns to model
+
+drops<- c('sample_id', 'sex', 'centre','priorSxAtFirstVisitSeverity', 'dose_2')
+omicron_train<-omicron_train[, !drops, with = FALSE]
+omicron_test<-omicron_test[, !drops, with = FALSE]
+
+#save the response var because dummyVars will remove
+train_y<-omicron_train$ic50_Omicron
+
+omicron_test$ic50_Omicron<-0
+
+#Create dummy variables using the same transformation for both datasets
+dummies <- dummyVars(ic50_Omicron ~ ., data = omicron_train)
+omicron_train<-predict(dummies, newdata = omicron_train)
+omicron_test<-predict(dummies, newdata = omicron_test)
+
+#Convert to data.table
+omicron_train <- data.table(omicron_train)
+omicron_test <- data.table(omicron_test)
+
+#Use cross validation
+
+omicron_train<-as.matrix(omicron_train)
+
+omicron_test<-as.matrix(omicron_test)
+
+gl_model<-cv.glmnet(omicron_train, train_y, alpha = 1,family="gaussian")
+
+bestlam<-gl_model$lambda.min
+
+#fit a logistic model
+gl_model<-glmnet(omicron_train, train_y, alpha = 1,family="gaussian")
+
+plot_glmnet(gl_model)
+
+#save model
+saveRDS(gl_model,"~/Desktop/gl_model.model")
+
+ncol(omicron_train)
+ncol(omicron_test)
+
+omicron_test<-as.matrix(omicron_test)
+
+#use the full model
+
+pred<-predict(gl_model,s=bestlam, newx = omicron_test)
+
+bestlam
+predict(gl_model,s=bestlam, newx = test,type="coefficients")
+gl_model
+
+bestlam
+predict(gl_model,s=bestlam, newx = test,type="coefficients")
+gl_model
+
+#make a submision file
+
+omicron_submit$ic50_Omicron<-pred
+
+fwrite(omicron_submit,"./project/volume/data/processed/omicron_submit.csv")
+fwrite(omicron_submit,"~/Desktop/omi_sub_final.csv")
+
+
+

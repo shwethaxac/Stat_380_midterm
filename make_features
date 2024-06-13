@@ -1,0 +1,99 @@
+#MIDTERM PROJECT - shwetha arumugam chitra devi
+
+library(data.table)
+library(caret)
+library(Metrics)
+library(dplyr)
+library(glmnet)
+library(plotmo)
+library(lubridate)
+library(Matrix)
+
+set.seed(7)
+
+#read in data
+omicron_train<-fread("~/Desktop/Stat_380_train.csv")
+omicron_test<- fread("~/Desktop/Stat_380_test.csv")
+omicron_submit <- fread("~/Desktop/Example_Sub.csv")
+covar_data <- fread("~/Desktop/covar_data.csv")
+
+fwrite(omicron_train,"./project/volume/data/raw/Stat_380_train.csv")
+fwrite(omicron_test,"./project/volume/data/raw/Stat_380_test.csv")
+fwrite(covar_data,"./project/volume/data/raw/covar_data.csv")
+fwrite(omicron_submit,'./project/volume/data/raw/Example_Sub.csv')
+
+#mean(omicron_train[is.na(omicron_train$days_sinceSxLatest)]$ic50_Omicron)
+#mean(omicron_train[0 < omicron_train$days_sinceSxLatest]$ic50_Omicron)
+
+#make a master table
+
+omicron_test$ic50_Omicron<-0
+
+#add a column that lets you easily differentiate between train and test rows once they are together
+omicron_test$omicron_train<-0
+omicron_train$omicron_train<-1
+
+#sorting columns
+omicron_train$sortCol <- gsub("train_", "", omicron_train$ic50_Omicron)
+omicron_test$sortCol <- gsub("test_", "", omicron_test$ic50_Omicron)
+
+#now bind them together
+
+master<-rbind(omicron_train,omicron_test)
+master<-full_join(master, covar_data)
+
+#feature engineering
+
+setkey(master,ic50_Omicron)
+
+master$priorSxAtFirstVisit[master$priorSxAtFirstVisit == "N"] <- 0
+master$priorSxAtFirstVisit[master$priorSxAtFirstVisit == "Y"] <- 1
+master$priorSxAtFirstVisit <- as.integer(master$priorSxAtFirstVisit)
+master$priorSxAtFirstVisit[is.na(master$priorSxAtFirstVisit)] <- 0.5
+
+master$posTest_beforeVisit[master$posTest_beforeVisit == "No"] <- 0
+master$posTest_beforeVisit[master$posTest_beforeVisit == "Yes"] <- 1
+master$posTest_beforeVisit <- as.integer(master$posTest_beforeVisit)
+master$posTest_beforeVisit[is.na(master$posTest_beforeVisit)] <- 0.5
+
+master$dose_3[master$dose_3 != ""] <- 1
+master$dose_3[master$dose_3 == ""] <- 0
+
+master$dose_3 <- as.integer(master$dose_3)
+
+master$Sx_severity_most_recent[is.na(master$Sx_severity_most_recent)] <- 0
+
+master$days_sinceSxLatest[is.na(master$days_sinceSxLatest)] <- mean(master[0 < master$days_sinceSxLatest]$days_sinceSxLatest)
+
+master$days_sinceDose2[is.na(master$days_sinceDose2)] <- mean(master[0 < master$days_sinceDose2]$days_sinceDose2)
+
+master$days_sinceDose3[is.na(master$days_sinceDose3)] <- mean(master[0 < master$days_sinceDose3]$days_sinceDose3)
+
+master$days_dose12interval[is.na(master$days_dose12interval)] <- mean(master[0 < master$days_dose12interval]$days_dose12interval)
+
+master$days_dose23interval[is.na(master$days_dose23interval)] <- mean(master[0 < master$days_dose23interval]$days_dose23interval)
+
+master$days_sincePosTest_latest[is.na(master$days_sincePosTest_latest)] <- mean(master[0 < master$days_sincePosTest_latest]$days_sincePosTest_latest)
+
+
+#split back to train/test
+
+omicron_train<-master[omicron_train==1]
+omicron_test<-master[omicron_train==0]
+
+#sort col
+omicron_train <- omicron_train[order(as.integer(sortCol))]
+omicron_test <- omicron_test[order(as.integer(sortCol))]
+
+omicron_train$sortCol <- NULL
+omicron_test$sortCol <- NULL
+
+#clean up columns
+omicron_train$omicron_train<-NULL
+omicron_test$omicron_train<-NULL
+omicron_test$ic50_Omicron<-NULL
+
+#write out to interim
+
+fwrite(omicron_train,"./project/volume/data/interim/omicron_train.csv")
+fwrite(omicron_test,"./project/volume/data/interim/omicron_test.csv")
